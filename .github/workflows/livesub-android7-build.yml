@@ -1,0 +1,71 @@
+name: LiveSub Android7 Build
+
+on:
+  push:
+    branches:
+      - livesub-android7-build
+    paths:
+      - 'livesub-android7/**'
+      - '.github/workflows/livesub-android7-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: ${{ !contains(github.event.head_commit.message, '[built-apk]') && !contains(github.event.head_commit.message, '[build-failed]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: livesub-android7-build
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Unpack Android source
+        shell: bash
+        run: |
+          mkdir -p /tmp/livesub-android7
+          base64 -d livesub-android7/source.tar.gz.b64 > /tmp/livesub-android7.tar.gz
+          tar -xzf /tmp/livesub-android7.tar.gz -C /tmp/livesub-android7
+
+      - name: Build debug APK
+        id: build_apk
+        shell: bash
+        run: |
+          set -o pipefail
+          cd /tmp/livesub-android7
+          gradle assembleDebug --no-daemon 2>&1 | tee "$GITHUB_WORKSPACE/livesub-android7/build.log"
+
+      - name: Commit APK to temporary branch
+        if: success()
+        shell: bash
+        run: |
+          mkdir -p livesub-android7/artifacts
+          cp /tmp/livesub-android7/app/build/outputs/apk/debug/app-debug.apk livesub-android7/artifacts/LiveSub-Online-GPT-Fallback-Landscape-Android7.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add livesub-android7/artifacts/LiveSub-Online-GPT-Fallback-Landscape-Android7.apk livesub-android7/build.log
+          git commit -m "[built-apk] Build Android 7 compatible LiveSub"
+          git push origin HEAD:livesub-android7-build
+
+      - name: Commit failure log
+        if: failure()
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add livesub-android7/build.log || true
+          git commit -m "[build-failed] LiveSub Android 7 build log" || true
+          git push origin HEAD:livesub-android7-build || true
